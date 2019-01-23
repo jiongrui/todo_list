@@ -11,8 +11,8 @@ class HttpEchoClient {
 
   HttpEchoClient(this.port): host = 'http://localhost:$port';
 
-  Future send(String todo) async {
-    final response = await http.post(host + '/echo', body:todo);
+  Future add(Map param) async {
+    final response = await http.post(host + '/add', body:json.encode(param));
     if(response.statusCode == 200) {
       // Map<String, dynamic> todoJson = json.decode(response.body);
       // var todo = Todo.fromJson(todoJson);
@@ -23,8 +23,8 @@ class HttpEchoClient {
     }
   }
 
-  Future update(String todo) async {
-    final response = await http.post(host + '/update', body:todo);
+  Future update(Map param) async {
+    final response = await http.post(host + '/update', body:json.encode(param));
     if(response.statusCode == 200) {
       return _decodeTodos(response.body);
     }else {
@@ -32,8 +32,8 @@ class HttpEchoClient {
     }
   }
 
-  Future delete(int id) async {
-    final response = await http.post(host + '/delete', body:json.encode(id));
+  Future delete(Map param) async {
+    final response = await http.post(host + '/delete', body:json.encode(param));
     if(response.statusCode == 200) {
       // print('response.body:${response.body}');
       return _decodeTodos(response.body);
@@ -42,9 +42,13 @@ class HttpEchoClient {
     }
   }
 
-  Future<List<Todo>> getTodos() async {
+  Future<List<Todo>> getTodos(int timestamp) async {
+    // if(timestamp == null){
+    //   timestamp = new DateTime.now().millisecondsSinceEpoch;
+    // } 
+    var encodeTimestamp = json.encode(timestamp);
     try{
-      final response = await http.get(host + '/todo_list');
+      final response = await http.post(host + '/todo_list', body: encodeTimestamp);
       if(response.statusCode == 200){
         return _decodeTodos(response.body);
       }

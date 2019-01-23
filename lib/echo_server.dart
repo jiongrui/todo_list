@@ -17,6 +17,7 @@ class HttpEchoServer {
   static const columnBeginTimestamp = 'begin_timestamp';
   static const columnFinishedTimestamp = 'finished_timestamp';
   static const columnUpdateTimestamp = 'update_timestamp';
+  static const columnCreateTimestamp = 'create_timestamp';
   static const columnDone = 'done';
 
   final int port;
@@ -35,7 +36,7 @@ class HttpEchoServer {
   void _initRoutes() {
     routes = {
       '/todo_list': _todo_list,
-      '/echo': _echo,
+      '/add': _add,
       '/update': _update,
       '/delete': _delete
     };
@@ -71,6 +72,7 @@ class HttpEchoServer {
             $columnBeginTimestamp INTEGER,
             $columnFinishedTimestamp INTEGER,
             $columnUpdateTimestamp INTEGER,
+            $columnCreateTimestamp INTEGER,
             $columnDone INTEGER
           )
         ''';
@@ -87,23 +89,34 @@ class HttpEchoServer {
     }
 
     String body = await request.transform(utf8.decoder).join();
-    var id = json.decode(body);
+    var param = json.decode(body);
+    var todo = param['todo'];
 
     database = await openDatabase(databasePath);
-    var sql = '''DELETE FROM $tableName WHERE $columnId=$id''';
+    var sql = '''DELETE FROM $tableName WHERE $columnId=${todo['id']}''';
     int count = await database.rawDelete(sql);
     await database.close();
 
-    await _loadTodos();
+    await _loadTodos(param['timestamp']);
   
     String todoData = json.encode(todos);
     request.response.write(todoData);
     request.response.close();
   }
 
-  Future _loadTodos() async {
+  void _loadTodos([int timestamp]) async {
+    var date = new DateTime.now();
+    if(timestamp != null){
+      date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    }
+    var year = date.year;
+    var month = date.month;
+    var day = date.day;
+    var beginTimestamp = new DateTime(year, month, day).millisecondsSinceEpoch;
+    var endTimestamp = new DateTime(year, month, day+1).millisecondsSinceEpoch;
+
     database = await openDatabase(databasePath);
-    var sql = "select * from $tableName order by $columnBeginTimestamp desc";
+    var sql = "select * from $tableName where $columnBeginTimestamp >= $beginTimestamp and $columnBeginTimestamp < $endTimestamp order by $columnBeginTimestamp desc";
     var list = await database.rawQuery(sql);
     // await database.close();
 
@@ -113,13 +126,26 @@ class HttpEchoServer {
       todos.add(todo);
     }
   }
+  // void addColumn() async{
+  //   database = await openDatabase(databasePath);
+  //   var sql = "alter table $tableName add column create_timestamp INTEGER";
+  //   await database.execute(sql);
+  //   print('done.......');
+  // }
 
   void _todo_list(HttpRequest request) async{
-    if(request.method != GET){
+    if(request.method != POST){
       _unsupportedMethod(request);
       return;
     }
-    await _loadTodos();
+
+    String body = await request.transform(utf8.decoder).join();
+    var timestamp = null;
+    if(body.length > 0){
+      timestamp = json.decode(body);
+    }
+
+    await _loadTodos(timestamp);
   
     String todoData = json.encode(todos);
     request.response.write(todoData);
@@ -131,7 +157,7 @@ class HttpEchoServer {
     request.response.close();
   }
 
-  void _echo(HttpRequest request) async {
+  void _add(HttpRequest request) async {
     if(request.method != 'POST') {
       _unsupportedMethod(request);
       return;
@@ -139,10 +165,11 @@ class HttpEchoServer {
 
     String body = await request.transform(utf8.decoder).join();
     if(body != null) {
-      var todo = Todo.create(body);
+      var param = json.decode(body);
+      var todo = Todo.create(param['msg'], param['timestamp']);
       
       await _storeTodos(todo);
-      await _loadTodos();
+      await _loadTodos(param['timestamp']);
 
       request.response.statusCode = HttpStatus.ok;
       var data = json.encode(todos);
@@ -153,10 +180,10 @@ class HttpEchoServer {
     request.response.close();
   }
 
-  Future<bool> _storeTodos(Todo msg) async {
-    print('_storeTodos insert:$msg'); 
+  Future _storeTodos(Todo todo) async {
+    print('_storeTodos insert:$todo'); 
     database = await openDatabase(databasePath);
-    await database.insert(tableName, msg.toJson());
+    await database.insert(tableName, todo.toJson());
   }
 
   void _update(HttpRequest request) async {
@@ -167,8 +194,9 @@ class HttpEchoServer {
     
     String body = await request.transform(utf8.decoder).join();
     if(body != null) {
-      await _updateTodos(body);
-      await _loadTodos();
+      var param = json.decode(body);
+      await _updateTodos(Todo.fromJson(param['todo']));
+      await _loadTodos(param['timestamp']);
 
       request.response.statusCode = HttpStatus.ok;
       var data = json.encode(todos);
@@ -179,11 +207,9 @@ class HttpEchoServer {
     request.response.close();
   }
 
-  Future<bool> _updateTodos(String body) async {
-    var todo = json.decode(body);
-
+  Future _updateTodos(Todo todo) async {
     database = await openDatabase(databasePath);
-    var sql = "update $tableName set done=${todo["done"]} where $columnId=${todo["id"]}";
+    var sql = "update $tableName set done=${todo.done},finished_timestamp=${todo.finished_timestamp},update_timestamp=${todo.update_timestamp} where $columnId=${todo.id}";
     await database.execute(sql);
     await database.close();
   }

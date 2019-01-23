@@ -17,22 +17,25 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'todo list',
-      home: MessageListScreen(),
+      home: TodoListScreen(),
     );
   }
 }
 
-class MessageList extends StatefulWidget {
-  MessageList({Key key}) : super(key: key);
+class TodoList extends StatefulWidget {
+  TodoList({Key key}) : super(key: key);
 
   @override
   State createState() {
-    return _MessageListState();
+    return _TodoListState();
   }
 }
 
-class _MessageListState extends State<MessageList> with WidgetsBindingObserver {
+//with WidgetsBindingObserver 监控 app操作状态
+class _TodoListState extends State<TodoList> with WidgetsBindingObserver {
   final List<Todo> todos = [];
+  var _timestamp = new DateTime.now().millisecondsSinceEpoch;
+  var _date = new DateTime.now();
 
   Map<String, dynamic> param;
 
@@ -44,141 +47,239 @@ class _MessageListState extends State<MessageList> with WidgetsBindingObserver {
     _server = HttpEchoServer(port);
     _server.start().then((_) {
       _client = HttpEchoClient(port);
-      _client.getTodos().then((list){
-        setState((){
-          todos.addAll(list);
-        });
-      });
+      getTodos();
       WidgetsBinding.instance.addObserver(this);
     });
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state){
-    if(state == AppLifecycleState.paused) {
-      var server = _server;
-      _server = null;
-      server?.close();
-    }
+    //监控app进入到后台和返回app的状态
+      print('state:$state');
+    // if(state == AppLifecycleState.paused) {
+    //   var server = _server;
+    //   _server = null;
+    //   server?.close();
+    // }
   }
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      itemCount: todos.length,
-      itemBuilder: (context, index) {
-        var todo = todos[index];
-        final subtitle = DateTime.fromMillisecondsSinceEpoch(todo.begin_timestamp)
-            .toLocal()
-            .toIso8601String().split('.')[0];
-        return CheckboxListTile(
-          secondary: InkWell(
-            onTap:() async{
+    return Stack(
+      children:[
+        ListView.builder(
+        itemCount: todos.length,
+        itemBuilder: (context, index) {
+          var todo = todos[index];
+          final subtitle = DateTime.fromMillisecondsSinceEpoch(todo.update_timestamp)
+              .toLocal()
+              .toIso8601String().split('.')[0].replaceAll(new RegExp(r'T'),' ');
+          return CheckboxListTile(
+            secondary: InkWell(
+              onTap:() async{
+                param = {
+                  'context': context,
+                  'func': deleteTodo,
+                  'todo': todo,
+                  'title': 'be sure to delete todo?'
+                };
+                showWarnDialog(param);
+              },
+              child:Icon(Icons.delete)
+            ),
+            // activeColor: Colors.grey[500],
+            title: Text(todo.msg),
+            subtitle: Text(subtitle),
+            value: todo.done == 1,
+            onChanged: (bool value) {
+              if(value == false) return false; //已选中
+
+              if(isToday(todo.begin_timestamp) == false) return false; //非当天
+
+              var item = todo.toJson();
+              var now_timestamp = new DateTime.now().millisecondsSinceEpoch;
+              item['done'] = value ? 1 : 0;
+              item['update_timestamp'] = now_timestamp;
+              item['finished_timestamp'] = now_timestamp;
+              todo = Todo.fromJson(item);
+
               param = {
                 'context': context,
-                'func': deleteTodo,
-                'todo': todo,
-                'title': 'be sure to delete todo?'
+                'func': updateTodo,
+                'title': 'be sure to change todo status?',
+                'todo': todo
               };
-              _neverSatisfied(param);
+              showWarnDialog(param);
             },
-            child:Icon(Icons.delete)
-          ),
-          title: Text(todo.msg),
-          subtitle: Text(subtitle),
-          value: todo.done == 1,
-          onChanged: (bool value) {
-            var item = todo.toJson();
-            item['done'] = value ? 1 : 0;
-            todo = Todo.fromJson(item);
+          );
+        },
+      ),
+      Container(
+        child: todos.length == 0 ? NotTodos() : null 
+      ),
+      Container(
+        padding: EdgeInsets.only(right:15, bottom: 90),
+        child: Align(
+          alignment: Alignment.bottomRight,
+          child: FloatingActionButton(
+            onPressed: () async {
+              _selectDate(context);
+            },
+            heroTag: 'Select_Date',
+            tooltip: 'Select Date',
+            child: Icon(Icons.date_range),
+          )
+        )
+      )
+    ]);
+  }
 
-            param = {
-              'context': context,
-              'func': updateTodo,
-              'title': 'be sure to change todo status?',
-              'todo': todo
-            };
-            _neverSatisfied(param);
-            // var item = todo.toJson();
-            // item['done'] = value ? 1 : 0;
-            // todo = Todo.fromJson(item);
-            // setState(() { 
-            //   todos.replaceRange(index, index+1, [todo]);
-            // });
-            // _client.update(json.encode(todo));
-          },
-        );
-      },
-    );
+  void getTodos() {
+    _client.getTodos(_timestamp).then((list){
+      resetTodos(list);
+    });
   }
 
   void resetTodos(List<Todo> list) {
     setState((){
-      todos.replaceRange(0,todos.length,list);
+      todos.replaceRange(0, todos.length,list);
     });
   }
 
   void deleteTodo(Todo todo) async{
-    var list = await _client.delete(todo.id);
+    param = {
+      'todo': todo,
+      'timestamp': _timestamp 
+    };
+    var list = await _client.delete(param);
     resetTodos(list);
   }
 
   void updateTodo(Todo todo) async{
-    // setState(() { 
-    //   todos.replaceRange(index, index+1, [todo]);
-    // });
-    var list = await _client.update(json.encode(todo));
+    param = {
+      'todo': todo,
+      'timestamp': _timestamp 
+    };
+    var list = await _client.update(param);
     resetTodos(list);
+  }
+
+  void addTodo(String msg) async{
+    param = {
+      'msg': msg,
+      'timestamp': _timestamp 
+    };
+
+    var list = await _client.add(param);
+    if(list != null) {
+      // todoListKey.currentState.addMessage(msg);
+      resetTodos(list);
+    }else {
+      debugPrint('fail to send $msg');
+    }
+  }
+
+  bool isToday(int begin_timestamp) {
+    var today = new DateTime.now();
+    var year = today.year;
+    var month = today.month;
+    var day = today.day;
+    var beginTimestamp = new DateTime(year, month, day).millisecondsSinceEpoch;
+    var endTimestamp = new DateTime(year, month, day+1).millisecondsSinceEpoch; 
+
+    if(begin_timestamp >= beginTimestamp && begin_timestamp < endTimestamp){
+      return true;
+    }
+    return false;
+  }
+
+  bool isBeginToday() {
+    var today = new DateTime.now();
+    var year = today.year;
+    var month = today.month;
+    var day = today.day;
+    var beginTimestamp = new DateTime(year, month, day).millisecondsSinceEpoch;
+
+    if(_timestamp >= beginTimestamp){
+      return true;
+    }
+    return false;
+  }
+
+  //日期选择器
+  Future<Null> _selectDate(BuildContext context) async {
+    final DateTime _picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: new DateTime(2019),
+      lastDate: new DateTime(2050),
+      initialDatePickerMode: DatePickerMode.day
+    );
+
+    if(_picked != null){
+      print('_picked:$_picked');
+      _date = _picked;
+      _timestamp = _picked.millisecondsSinceEpoch;
+      getTodos();
+    }
   }
 }
 
-class MessageListScreen extends StatelessWidget {
-  final messageListKey =
-      GlobalKey<_MessageListState>(debugLabel: 'messageListKey');
+class NotTodos extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text('not todos!')
+    );
+  }
+}
 
+class TodoListScreen extends StatelessWidget {
+  final todoListKey =
+      GlobalKey<_TodoListState>(debugLabel: 'todoListKey');
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Todo List')),
-      body: MessageList(key: messageListKey),
+      body: TodoList(key: todoListKey),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
+          //不是大于今天的日期，不给添加todo
+          if(todoListKey.currentState.isBeginToday() == false) return false;
+          
+          //跳转页面，等待页面返回参数
           final result = await Navigator.push(
               context, MaterialPageRoute(builder: (_) => AddMessageScreen()));
 
-          if(_client == null) {
-            return;
+          if(_client == null || result == null) {
+            return false;
           }
           print('result:$result');
-          var list = await _client.send(result);
-
-          if(list != null) {
-            // messageListKey.currentState.addMessage(msg);
-            messageListKey.currentState.resetTodos(list);
-          }else {
-            debugPrint('fail to send $result');
-          }
+          todoListKey.currentState.addTodo(result);
         },
+        heroTag: 'Add_Todo',
         tooltip: 'Add Todo',
-        child: Icon(Icons.add),
+        child: Icon(Icons.add) 
       ),
     );
   }
 }
 
-class MessageForm extends StatefulWidget {
+class TodoForm extends StatefulWidget {
   @override
   State createState() {
-    return _MessageFormState();
+    return _TodoFormState();
   }
 }
 
-class _MessageFormState extends State<MessageForm> {
+class _TodoFormState extends State<TodoForm> {
   final editController = TextEditingController();
 
   @override
   void dispose() {
     super.dispose();
+    editController.clear();
     editController.dispose();
   }
 
@@ -203,15 +304,17 @@ class _MessageFormState extends State<MessageForm> {
           ),
           InkWell(
             onTap: () {
-              debugPrint('send:${editController.text}');
-              Navigator.pop(context, editController.text);
+              var value = editController.text.trim();
+              if(value.length > 0) {
+                Navigator.pop(context, editController.text);
+              }
             },
             child: Container(
                 padding: EdgeInsets.symmetric(vertical: 10, horizontal: 16),
                 decoration: BoxDecoration(
                     color: Colors.black12,
                     borderRadius: BorderRadius.circular(5.0)),
-                child: Text('Send')),
+                child: Text('Add')),
           )
         ],
       ),
@@ -226,12 +329,12 @@ class AddMessageScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text('Add Todo'),
       ),
-      body: MessageForm(),
+      body: TodoForm(),
     );
   }
 }
 
-Future<void> _neverSatisfied(Map param) async {
+Future<void> showWarnDialog(Map param) async {
   return showDialog<void>(
     context: param['context'],
     barrierDismissible: false, // user must tap button!
@@ -265,3 +368,5 @@ Future<void> _neverSatisfied(Map param) async {
     },
   );
 }
+
+
