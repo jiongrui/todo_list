@@ -4,9 +4,14 @@ import 'package:flutter/material.dart';
 import 'echo_client.dart';
 import 'echo_server.dart';
 import 'todo.dart';
+import 'pages/add_todo.dart';
+
 
 HttpEchoServer _server;
 HttpEchoClient _client;
+
+int _timestamp = new DateTime.now().millisecondsSinceEpoch;
+DateTime _date = new DateTime.now();
 
 void main() {
   runApp(MyApp());
@@ -22,6 +27,104 @@ class MyApp extends StatelessWidget {
   }
 }
 
+class TodoListScreen extends StatefulWidget {
+  TodoListScreen({Key key}) :super(key: key);
+
+  @override
+  _TodoListScreenState createState() => _TodoListScreenState();
+}
+
+var _title = '';
+class _TodoListScreenState extends State<TodoListScreen> {
+  final todoListKey = GlobalKey<_TodoListState>(debugLabel: 'todoListKey');
+
+  @override
+  void initState() {
+    super.initState();
+    setState((){
+      _title = 'Todo List ' + new DateTime.now().toIso8601String().split('T')[0];;
+    });
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(_title)),
+      body: 
+      Stack(children: [
+        TodoList(key: todoListKey),
+        Container(
+          padding: EdgeInsets.only(right:15, bottom: 90),
+          child: Align(
+            alignment: Alignment.bottomRight,
+            child: FloatingActionButton(
+              onPressed: () async {
+                selectDate(context);
+              },
+              heroTag: 'Select_Date',
+              tooltip: 'Select Date',
+              child: Icon(Icons.date_range),
+            )
+          )
+        )
+      ]),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          //不是大于今天的日期，不给添加todo
+          if(todoListKey.currentState.isBeginToday() == false) return false;
+          
+          //跳转页面，等待页面返回参数
+          final result = await Navigator.push(
+              context, MaterialPageRoute(builder: (_) => AddTodoScreen()));
+
+          if(_client == null || result == null) {
+            return false;
+          }
+          print('result:$result');
+          todoListKey.currentState.addTodo(result);
+        },
+        heroTag: 'Add_Todo',
+        tooltip: 'Add Todo',
+        child: Icon(Icons.add) 
+      ),
+    );
+  }
+
+  //日期选择器
+  Future<Null> selectDate(BuildContext context) async {
+    final DateTime picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: new DateTime(2019),
+      lastDate: new DateTime(2050),
+      initialDatePickerMode: DatePickerMode.day
+    );
+
+    if(picked != null){
+      print('picked:$picked');
+      _date = picked;
+      _timestamp = picked.millisecondsSinceEpoch;
+      todoListKey.currentState.getTodos();
+
+      setState((){
+        _title = 'Todo List ' + picked.toIso8601String().split('T')[0];
+      });
+    }
+  }
+}
+
+class NotTodos extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text('not todos!')
+    );
+  }
+}
+
+
+//listview
+
 class TodoList extends StatefulWidget {
   TodoList({Key key}) : super(key: key);
 
@@ -34,8 +137,6 @@ class TodoList extends StatefulWidget {
 //with WidgetsBindingObserver 监控 app操作状态
 class _TodoListState extends State<TodoList> with WidgetsBindingObserver {
   final List<Todo> todos = [];
-  var _timestamp = new DateTime.now().millisecondsSinceEpoch;
-  var _date = new DateTime.now();
 
   Map<String, dynamic> param;
 
@@ -65,9 +166,8 @@ class _TodoListState extends State<TodoList> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children:[
-        ListView.builder(
+    return Container(
+      child: todos.length == 0 ? NotTodos() : ListView.builder(
         itemCount: todos.length,
         itemBuilder: (context, index) {
           var todo = todos[index];
@@ -102,7 +202,7 @@ class _TodoListState extends State<TodoList> with WidgetsBindingObserver {
               item['update_timestamp'] = now_timestamp;
               item['finished_timestamp'] = now_timestamp;
               todo = Todo.fromJson(item);
-
+              print('todo....:$todo');
               param = {
                 'context': context,
                 'func': updateTodo,
@@ -113,25 +213,8 @@ class _TodoListState extends State<TodoList> with WidgetsBindingObserver {
             },
           );
         },
-      ),
-      Container(
-        child: todos.length == 0 ? NotTodos() : null 
-      ),
-      Container(
-        padding: EdgeInsets.only(right:15, bottom: 90),
-        child: Align(
-          alignment: Alignment.bottomRight,
-          child: FloatingActionButton(
-            onPressed: () async {
-              _selectDate(context);
-            },
-            heroTag: 'Select_Date',
-            tooltip: 'Select Date',
-            child: Icon(Icons.date_range),
-          )
-        )
       )
-    ]);
+    );
   }
 
   void getTodos() {
@@ -205,133 +288,6 @@ class _TodoListState extends State<TodoList> with WidgetsBindingObserver {
     }
     return false;
   }
-
-  //日期选择器
-  Future<Null> _selectDate(BuildContext context) async {
-    final DateTime _picked = await showDatePicker(
-      context: context,
-      initialDate: _date,
-      firstDate: new DateTime(2019),
-      lastDate: new DateTime(2050),
-      initialDatePickerMode: DatePickerMode.day
-    );
-
-    if(_picked != null){
-      print('_picked:$_picked');
-      _date = _picked;
-      _timestamp = _picked.millisecondsSinceEpoch;
-      getTodos();
-    }
-  }
-}
-
-class NotTodos extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text('not todos!')
-    );
-  }
-}
-
-class TodoListScreen extends StatelessWidget {
-  final todoListKey =
-      GlobalKey<_TodoListState>(debugLabel: 'todoListKey');
-  
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Todo List')),
-      body: TodoList(key: todoListKey),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          //不是大于今天的日期，不给添加todo
-          if(todoListKey.currentState.isBeginToday() == false) return false;
-          
-          //跳转页面，等待页面返回参数
-          final result = await Navigator.push(
-              context, MaterialPageRoute(builder: (_) => AddMessageScreen()));
-
-          if(_client == null || result == null) {
-            return false;
-          }
-          print('result:$result');
-          todoListKey.currentState.addTodo(result);
-        },
-        heroTag: 'Add_Todo',
-        tooltip: 'Add Todo',
-        child: Icon(Icons.add) 
-      ),
-    );
-  }
-}
-
-class TodoForm extends StatefulWidget {
-  @override
-  State createState() {
-    return _TodoFormState();
-  }
-}
-
-class _TodoFormState extends State<TodoForm> {
-  final editController = TextEditingController();
-
-  @override
-  void dispose() {
-    super.dispose();
-    editController.clear();
-    editController.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.all(16),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Container(
-              margin: EdgeInsets.only(right: 8),
-              child: TextField(
-                decoration: InputDecoration(
-                    hintText: 'Input Todo',
-                    contentPadding: EdgeInsets.all(0)),
-                style: TextStyle(fontSize: 22, color: Colors.black54),
-                controller: editController,
-                autofocus: true,
-              ),
-            ),
-          ),
-          InkWell(
-            onTap: () {
-              var value = editController.text.trim();
-              if(value.length > 0) {
-                Navigator.pop(context, editController.text);
-              }
-            },
-            child: Container(
-                padding: EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-                decoration: BoxDecoration(
-                    color: Colors.black12,
-                    borderRadius: BorderRadius.circular(5.0)),
-                child: Text('Add')),
-          )
-        ],
-      ),
-    );
-  }
-}
-
-class AddMessageScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Add Todo'),
-      ),
-      body: TodoForm(),
-    );
-  }
 }
 
 Future<void> showWarnDialog(Map param) async {
@@ -361,6 +317,7 @@ Future<void> showWarnDialog(Map param) async {
             onPressed: () {
               param['func'](param['todo']);
               Navigator.of(param['context']).pop();
+              print('update todo done');
             },
           ),
         ],
@@ -368,5 +325,7 @@ Future<void> showWarnDialog(Map param) async {
     },
   );
 }
+
+
 
 

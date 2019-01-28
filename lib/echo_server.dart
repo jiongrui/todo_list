@@ -116,7 +116,7 @@ class HttpEchoServer {
     var endTimestamp = new DateTime(year, month, day+1).millisecondsSinceEpoch;
 
     database = await openDatabase(databasePath);
-    var sql = "select * from $tableName where $columnBeginTimestamp >= $beginTimestamp and $columnBeginTimestamp < $endTimestamp order by $columnBeginTimestamp desc";
+    var sql = "select * from $tableName where $columnBeginTimestamp >= $beginTimestamp and $columnBeginTimestamp < $endTimestamp order by $columnDone asc";//desc
     var list = await database.rawQuery(sql);
     // await database.close();
 
