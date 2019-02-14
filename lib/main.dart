@@ -5,7 +5,8 @@ import 'echo_client.dart';
 import 'echo_server.dart';
 import 'todo.dart';
 import 'pages/add_todo.dart';
-
+import 'toast.dart';
+import 'color.dart';
 
 HttpEchoServer _server;
 HttpEchoClient _client;
@@ -70,8 +71,11 @@ class _TodoListScreenState extends State<TodoListScreen> {
       ]),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          //不是大于今天的日期，不给添加todo
-          if(todoListKey.currentState.isBeginToday() == false) return false;
+          //今天以前的日期，不给添加todo
+          if(todoListKey.currentState.isBeginToday() == false){
+            Toast.toast(context, '过去不予新增todo！');
+            return false;
+          } 
           
           //跳转页面，等待页面返回参数
           final result = await Navigator.push(
@@ -87,6 +91,7 @@ class _TodoListScreenState extends State<TodoListScreen> {
         tooltip: 'Add Todo',
         child: Icon(Icons.add) 
       ),
+      // backgroundColor: HexColor('#EE82EE')
     );
   }
 
@@ -177,11 +182,16 @@ class _TodoListState extends State<TodoList> with WidgetsBindingObserver {
           return CheckboxListTile(
             secondary: InkWell(
               onTap:() async{
+                if(isToday(todo.begin_timestamp) == false){
+                  Toast.toast(context, '非当天，不予更改！');
+                  return false; //非当天
+                } 
+
                 param = {
                   'context': context,
                   'func': deleteTodo,
                   'todo': todo,
-                  'title': 'be sure to delete todo?'
+                  'title': '确定删除todo?'
                 };
                 showWarnDialog(param);
               },
@@ -192,9 +202,15 @@ class _TodoListState extends State<TodoList> with WidgetsBindingObserver {
             subtitle: Text(subtitle),
             value: todo.done == 1,
             onChanged: (bool value) {
-              if(value == false) return false; //已选中
+              if(isToday(todo.begin_timestamp) == false){
+                Toast.toast(context, '非当天，不予更改！');
+                return false; //非当天
+              } 
 
-              if(isToday(todo.begin_timestamp) == false) return false; //非当天
+              if(value == false){
+                Toast.toast(context, '已完成，不可更改！');
+                return false; //已选中
+              } 
 
               var item = todo.toJson();
               var now_timestamp = new DateTime.now().millisecondsSinceEpoch;
@@ -202,11 +218,10 @@ class _TodoListState extends State<TodoList> with WidgetsBindingObserver {
               item['update_timestamp'] = now_timestamp;
               item['finished_timestamp'] = now_timestamp;
               todo = Todo.fromJson(item);
-              print('todo....:$todo');
               param = {
                 'context': context,
                 'func': updateTodo,
-                'title': 'be sure to change todo status?',
+                'title': '确定已完成?',
                 'todo': todo
               };
               showWarnDialog(param);
@@ -262,7 +277,7 @@ class _TodoListState extends State<TodoList> with WidgetsBindingObserver {
     }
   }
 
-  bool isToday(int begin_timestamp) {
+  bool isToday(int begin_timestamp){
     var today = new DateTime.now();
     var year = today.year;
     var month = today.month;
@@ -317,7 +332,6 @@ Future<void> showWarnDialog(Map param) async {
             onPressed: () {
               param['func'](param['todo']);
               Navigator.of(param['context']).pop();
-              print('update todo done');
             },
           ),
         ],

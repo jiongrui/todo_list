@@ -48,7 +48,7 @@ class HttpEchoClient {
     // } 
     var encodeTimestamp = json.encode(timestamp);
     try{
-      final response = await http.post(host + '/todo_list', body: encodeTimestamp);
+      final response = await http.get(host + '/todo_list?timestamp=$encodeTimestamp');
       if(response.statusCode == 200){
         return _decodeTodos(response.body);
       }

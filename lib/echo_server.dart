@@ -87,8 +87,8 @@ class HttpEchoServer {
       _unsupportedMethod(request);
       return;
     }
-
-    String body = await request.transform(utf8.decoder).join();
+    String body = await getParams(request);
+    // String body = await request.transform(utf8.decoder).join();
     var param = json.decode(body);
     var todo = param['todo'];
 
@@ -134,15 +134,15 @@ class HttpEchoServer {
   // }
 
   void _todo_list(HttpRequest request) async{
-    if(request.method != POST){
+    if(request.method != GET){
       _unsupportedMethod(request);
       return;
     }
 
-    String body = await request.transform(utf8.decoder).join();
+    String body = await getParams(request);
     var timestamp = null;
     if(body.length > 0){
-      timestamp = json.decode(body);
+      timestamp = int.parse(json.decode(body)['timestamp']);
     }
 
     await _loadTodos(timestamp);
@@ -163,7 +163,8 @@ class HttpEchoServer {
       return;
     }
 
-    String body = await request.transform(utf8.decoder).join();
+    String body = await getParams(request);
+    // String body = await request.transform(utf8.decoder).join();
     if(body != null) {
       var param = json.decode(body);
       var todo = Todo.create(param['msg'], param['timestamp']);
@@ -192,7 +193,8 @@ class HttpEchoServer {
       return;
     }
     
-    String body = await request.transform(utf8.decoder).join();
+    String body = await getParams(request);
+    // String body = await request.transform(utf8.decoder).join();
     if(body != null) {
       var param = json.decode(body);
       await _updateTodos(Todo.fromJson(param['todo']));
@@ -222,5 +224,26 @@ class HttpEchoServer {
     var db = database;
     database = null;
     db?.close();
+  }
+
+   getParams(HttpRequest request) async{
+    var params = null;
+    if(request.method == 'POST') {
+      params = await request.transform(utf8.decoder).join();
+    }else if(request.method == 'GET') {
+      var uri = request.uri.toString();
+      var index = uri.indexOf('?');
+      if(index > -1){
+        Map<String, dynamic> param = {};
+        var str = uri.substring(index+1);
+        var arr = str.split('&');
+        for (var i=0,len=arr.length; i<len;i++){
+          var arr1 = arr[i].split('=');
+          param[arr1[0]] = arr1[1];
+        }
+        params=json.encode(param);
+      }
+    }
+    return params;
   }
 }
